@@ -4,6 +4,7 @@ set -uo pipefail
 WORK_DIR=/var/lib/snapshot-recert
 CRYPTO_DIR=${WORK_DIR}/crypto
 NMSTATE_FILE=${WORK_DIR}/nmstate.yaml
+UPLINK_MAC_FILE=${WORK_DIR}/uplink.mac
 MARKER_DIR=${WORK_DIR}/markers
 
 log() { echo "$(date '+%Y-%m-%d %H:%M:%S') snapshot-recert: $*"; }
@@ -30,9 +31,30 @@ mkdir -p "${MARKER_DIR}"
 
 # --- Apply network configuration ---
 apply_nmstate() {
-  nmstatectl apply "${NMSTATE_FILE}"
+  local expected_mac address_file actual_mac iface match_count=0
+  expected_mac=$(<"${UPLINK_MAC_FILE}") || return 1
+  expected_mac=${expected_mac,,}
+  for address_file in /sys/class/net/*/address; do
+    actual_mac=$(<"${address_file}") || continue
+    if [[ ${actual_mac,,} == "${expected_mac}" ]]; then
+      iface=${address_file%/address}
+      iface=${iface##*/}
+      ((match_count += 1))
+    fi
+  done
+  if (( match_count != 1 )); then
+    log "Expected one guest interface with OCP uplink MAC ${expected_mac}; found ${match_count}"
+    return 1
+  fi
+  if [[ ! ${iface} =~ ^[a-zA-Z0-9_.:-]+$ ]]; then
+    log "Invalid guest interface name for OCP uplink: ${iface}"
+    return 1
+  fi
+  sed "s/__OCP_UPLINK_INTERFACE__/${iface}/g" "${NMSTATE_FILE}" > "${WORK_DIR}/nmstate.resolved.yaml"
+  log "Applying OCP network on ${iface} (MAC ${expected_mac})"
+  nmstatectl apply "${WORK_DIR}/nmstate.resolved.yaml"
 }
-run_once "nmstate" apply_nmstate
+run_once "nmstate" apply_nmstate || exit 1
 
 # --- Clean CRI-O pod state from snapshot ---
 clean_crio() {
