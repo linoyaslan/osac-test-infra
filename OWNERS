@@ -16,6 +16,8 @@ filters:
     - ygalblum
     - minmzzhang
     - ybettan
+    - bkopilov
+    - linoyaslan
     reviewers:
     - jhernand
     - adriengentil
@@ -32,3 +34,5 @@ filters:
     - ygalblum
     - minmzzhang
     - ybettan
+    - bkopilov
+    - linoyaslan
