@@ -85,9 +85,35 @@ quay_username = <your-quay-username>
 quay_password = <your-quay-password>
 ```
 
-- `lab_name` — unique identifier for your lab to avoid DNS collisions in Route 53
+- `lab_name` — unique identifier for your lab to avoid DNS collisions in Route 53. The backend uses it as the first DNS label in `ocp_base_domain`. Use a hostname-compatible label of at most 63 characters: ASCII letters, digits, and hyphens only, with a letter or digit at each end. Do not use underscores (for example, `qa-lab-1` is valid).
 - AWS credentials — used for Route 53 DNS record management
 - Quay credentials — the account must have pull access to `quay.io/osac-project/cluster-flavors`; `setup-infra` logs in automatically when it downloads the snapshot flavor image
+
+The Netris backend's `dns_server` defaults to `8.8.8.8`. Some environments block that resolver. If it is unreachable from your lab and you only need a DNS override, export:
+
+```bash
+export EXTRA_VARS="dns_server=<reachable-dns-server>"
+```
+
+`OSAC_PROFILE` selects the OSAC Helm values preset; it is separate from `SUITE`, which selects test setup and tests. Netris defaults `OSAC_PROFILE` to `caas-ci`. Both `caas-ci` and `bmaas-ci` enable Metal3, the OSAC component for bare-metal provisioning. Its installer check requires a cluster-scoped Kubernetes `Provisioning` resource with `watchAllNamespaces: true`. Netris defaults `bare_metal_services` to `false`, so `prep-osac` skips creating or updating that resource unless the flag is true. If the resource already exists with the required setting, the flag is not needed just for the installer check.
+
+The same flag enables Netris's BMC (Baseboard Management Controller) support: `deploy-infra` starts `sushy-tools`, which emulates a server's management interface, and `deploy-ocp` reserves the OCP VM's BMC address. Without the flag those conditional setup tasks are skipped, even though the commands can still succeed. Use the flag when you need these bare-metal services as well as the Metal3 prerequisite.
+
+This flag is profile-dependent, not required for every OSAC deployment:
+
+| OSAC profile | When `bare_metal_services=true` is needed |
+|--------------|-------------------------------------------|
+| `caas-ci` | The current profile enables Metal3; set it if the required `Provisioning` resource is absent. |
+| `bmaas-ci` | The profile enables Metal3; set it if the required `Provisioning` resource is absent. |
+| `vmaas-ci` | Not needed in the current VMaaS full-install workflow. |
+
+For another profile, check whether its values enable `bmf.metal3.enabled`. For `caas-ci` or `bmaas-ci`, if you also need to override DNS, combine both settings in one export; a second `export EXTRA_VARS=...` would replace the first value:
+
+```bash
+export EXTRA_VARS="bare_metal_services=true dns_server=<reachable-dns-server>"
+```
+
+The deployment example below exports `EXTRA_VARS` once; the top-level Makefile forwards it to each backend stage. For a profile that does not need bare-metal services, use only the DNS override if required.
 
 Additionally, an OCP pull secret must be present at `/root/pull-secret` on the host.
 
@@ -95,7 +121,7 @@ All secret files are gitignored.
 
 ## How It Works
 
-When you run `make e2e INFRA=netris SUITE=caas`, the following happens:
+When you run `make e2e INFRA=netris SUITE=caas` with `EXTRA_VARS` exported as described above, the following happens:
 
 1. **Validate** — checks that the `netris` backend exists and supports the `caas` suite
 2. **`setup-infra`** — installs prerequisites, caches images (`ansible-playbook playbooks/setup-infra.yml`)
@@ -122,11 +148,16 @@ TEST=test_cluster_order_lifecycle make test-caas
 
 ```bash
 # Full pipeline: provision + deploy + test
+# Netris defaults to caas-ci; caas-ci and bmaas-ci enable Metal3.
+export EXTRA_VARS="bare_metal_services=true"
+# If 8.8.8.8 is blocked too, replace the export with the combined value shown above.
+
 make e2e INFRA=netris SUITE=caas
 
 # Or step by step
 make setup-infra INFRA=netris
 make deploy-infra INFRA=netris
+make deploy-ocp INFRA=netris
 make deploy-osac INFRA=netris
 make setup-suite INFRA=netris SUITE=caas
 make run-tests INFRA=netris SUITE=caas
