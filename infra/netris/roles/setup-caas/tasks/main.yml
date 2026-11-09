@@ -94,9 +94,6 @@
       - >-
         (_caas_external_pool_by_name | length == 0) or
         ((_caas_external_pool_by_name | first).get('spec', {}).get('cidrs', []) == [osac_external_ip_pool_cidr])
-      - >-
-        (_caas_external_pool_by_cidr | length == 0) or
-        ((_caas_external_pool_by_cidr | first).get('spec', {}).get('implementation_strategy', 'netris') == 'netris')
     fail_msg: >-
       ExternalIPPool name/CIDR conflicts with the Netris lab configuration.
 
@@ -114,7 +111,6 @@
       spec:
         cidrs: ["{{ osac_external_ip_pool_cidr }}"]
         ip_family: IP_FAMILY_IPV4
-        implementation_strategy: netris
     validate_certs: false
     status_code: [200, 201]
   register: _caas_external_pool_created
